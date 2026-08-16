@@ -2,15 +2,18 @@ const nodemailer = require('nodemailer');
 const logger = require('../utils/logger');
 
 function createTransporter() {
-  // Uses Gmail by default. Set EMAIL_HOST/PORT for other providers.
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    throw new Error('EMAIL_USER and EMAIL_PASS must be set in .env');
+  }
   return nodemailer.createTransport({
     host: process.env.EMAIL_HOST || 'smtp.gmail.com',
     port: parseInt(process.env.EMAIL_PORT || '587'),
-    secure: false, // TLS
+    secure: false,
     auth: {
       user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS, // Gmail: use an App Password
+      pass: process.env.EMAIL_PASS,
     },
+    tls: { rejectUnauthorized: false },
   });
 }
 
