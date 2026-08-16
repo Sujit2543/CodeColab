@@ -2,23 +2,26 @@ const nodemailer = require('nodemailer');
 const logger = require('../utils/logger');
 
 function createTransporter() {
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    throw new Error('EMAIL_USER and EMAIL_PASS must be set in .env');
+  const user = process.env.EMAIL_USER;
+  const pass = process.env.EMAIL_PASS;
+
+  if (!user || !pass) {
+    throw new Error('EMAIL_USER and EMAIL_PASS must be set in environment variables');
   }
+
   return nodemailer.createTransport({
-    host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-    port: parseInt(process.env.EMAIL_PORT || '587'),
-    secure: false,
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-    tls: { rejectUnauthorized: false },
+    service: 'gmail',          // use named service — handles host/port/tls automatically
+    auth: { user, pass },
+    debug: false,
+    logger: false,
   });
 }
 
 async function sendPasswordResetEmail({ to, username, resetUrl }) {
   const transporter = createTransporter();
+
+  // Verify SMTP connection before sending
+  await transporter.verify();
 
   const html = `
 <!DOCTYPE html>
@@ -40,11 +43,7 @@ async function sendPasswordResetEmail({ to, username, resetUrl }) {
             <td style="padding:28px 32px;border-bottom:1px solid #21262d;">
               <table cellpadding="0" cellspacing="0">
                 <tr>
-                  <td>
-                    <div style="background:linear-gradient(135deg,#1f6feb,#388bfd);width:36px;height:36px;
-                      border-radius:8px;display:inline-flex;align-items:center;justify-content:center;
-                      font-size:18px;line-height:36px;text-align:center;">💻</div>
-                  </td>
+                  <td style="font-size:24px;line-height:1;">💻</td>
                   <td style="padding-left:12px;font-size:18px;font-weight:700;color:#e6edf3;">
                     CodeCollab
                   </td>
@@ -64,13 +63,13 @@ async function sendPasswordResetEmail({ to, username, resetUrl }) {
                 your CodeCollab password. Click the button below to create a new one.
               </p>
 
-              <!-- Button -->
+              <!-- CTA Button -->
               <table cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
                 <tr>
                   <td style="background:linear-gradient(135deg,#1f6feb,#388bfd);
-                    border-radius:8px;padding:12px 28px;">
+                    border-radius:8px;padding:14px 32px;">
                     <a href="${resetUrl}"
-                      style="color:#fff;text-decoration:none;font-size:14px;font-weight:600;
+                      style="color:#fff;text-decoration:none;font-size:15px;font-weight:700;
                       letter-spacing:0.02em;white-space:nowrap;">
                       Reset Password →
                     </a>
@@ -79,20 +78,19 @@ async function sendPasswordResetEmail({ to, username, resetUrl }) {
               </table>
 
               <!-- Fallback URL -->
-              <p style="margin:0 0 8px;font-size:12px;color:#7d8590;">
-                If the button doesn't work, copy and paste this link:
+              <p style="margin:0 0 6px;font-size:12px;color:#7d8590;">
+                If the button doesn't work, copy this link into your browser:
               </p>
               <p style="margin:0 0 24px;font-size:11px;color:#388bfd;word-break:break-all;">
                 ${resetUrl}
               </p>
 
-              <!-- Warning -->
+              <!-- Warning box -->
               <div style="background:#161b22;border:1px solid #21262d;border-left:3px solid #d29922;
-                border-radius:6px;padding:14px;margin-bottom:4px;">
-                <p style="margin:0;font-size:12px;color:#7d8590;line-height:1.5;">
-                  ⚠️ This link expires in <strong style="color:#e6edf3;">1 hour</strong>. 
-                  If you didn't request a password reset, you can safely ignore this email — 
-                  your account is secure.
+                border-radius:6px;padding:14px;">
+                <p style="margin:0;font-size:12px;color:#7d8590;line-height:1.6;">
+                  ⚠️ This link expires in <strong style="color:#e6edf3;">1 hour</strong>.
+                  If you didn't request a password reset, ignore this email — your account is safe.
                 </p>
               </div>
             </td>
@@ -112,13 +110,12 @@ async function sendPasswordResetEmail({ to, username, resetUrl }) {
     </tr>
   </table>
 </body>
-</html>
-  `.trim();
+</html>`.trim();
 
   const info = await transporter.sendMail({
     from: `"CodeCollab" <${process.env.EMAIL_USER}>`,
     to,
-    subject: 'Reset your CodeCollab password',
+    subject: '🔐 Reset your CodeCollab password',
     html,
     text: `Reset your CodeCollab password\n\nHey ${username},\n\nClick this link to reset your password (expires in 1 hour):\n${resetUrl}\n\nIf you didn't request this, ignore this email.`,
   });
