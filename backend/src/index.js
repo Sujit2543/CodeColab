@@ -23,6 +23,7 @@ const analyticsRoutes = require('./routes/analytics');
 
 const app = express();
 
+// Render is behind a proxy
 app.set('trust proxy', 1);
 
 const httpServer = http.createServer(app);
@@ -47,33 +48,51 @@ app.use(
 // CORS
 // ─────────────────────────────────────────────
 
+// Production + local frontend URLs
 const allowedOrigins = [
   'https://code-colab-pied.vercel.app',
   'http://localhost:5173',
+  'http://localhost:5174',
   'http://localhost:3000',
 ];
 
+// Check whether origin is allowed
+const isAllowedOrigin = (origin) => {
+  // Requests without Origin
+  // Example: Postman, health checks, server-to-server
+  if (!origin) {
+    return true;
+  }
+
+  // Exact allowed origins
+  if (allowedOrigins.includes(origin)) {
+    return true;
+  }
+
+  // Allow Vercel preview/deployment URLs
+  if (
+    origin.startsWith('https://') &&
+    origin.endsWith('.vercel.app')
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
+// CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
-
-    // Allow requests without Origin
-    if (!origin) {
-      return callback(null, true);
-    }
-
-    // Allow exact origins
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-
-    // Allow all Vercel deployments
-    if (origin.endsWith('.vercel.app')) {
+    if (isAllowedOrigin(origin)) {
+      console.log('CORS ALLOWED:', origin || 'NO ORIGIN');
       return callback(null, true);
     }
 
     console.log('CORS BLOCKED:', origin);
 
-    return callback(null, false);
+    // IMPORTANT:
+    // Return an error so the request is clearly rejected.
+    return callback(new Error(`CORS blocked: ${origin}`));
   },
 
   credentials: true,
@@ -98,9 +117,6 @@ const corsOptions = {
 // CORS MUST BE BEFORE ROUTES
 app.use(cors(corsOptions));
 
-// Handle OPTIONS requests
-app.options('*', cors(corsOptions));
-
 // ─────────────────────────────────────────────
 // BODY PARSER
 // ─────────────────────────────────────────────
@@ -124,6 +140,7 @@ app.use(
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 500,
+
   standardHeaders: true,
   legacyHeaders: false,
 
@@ -137,6 +154,7 @@ const globalLimiter = rateLimit({
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
+
   standardHeaders: true,
   legacyHeaders: false,
 
@@ -209,12 +227,19 @@ app.use((req, res) => {
 });
 
 // ─────────────────────────────────────────────
-// ERROR HANDLER
+// GLOBAL ERROR HANDLER
 // ─────────────────────────────────────────────
 
 app.use((err, req, res, next) => {
-
   console.error('SERVER ERROR:', err);
+
+  if (err.message && err.message.startsWith('CORS blocked')) {
+    return res.status(403).json({
+      success: false,
+      message: err.message,
+      code: 'CORS_ERROR',
+    });
+  }
 
   logger.error('Unhandled error', {
     error: err.message,
@@ -235,21 +260,20 @@ app.use((err, req, res, next) => {
 const io = new Server(httpServer, {
   cors: {
     origin: function (origin, callback) {
+      if (isAllowedOrigin(origin)) {
+        console.log(
+          'SOCKET CORS ALLOWED:',
+          origin || 'NO ORIGIN'
+        );
 
-      if (!origin) {
-        return callback(null, true);
-      }
-
-      if (
-        allowedOrigins.includes(origin) ||
-        origin.endsWith('.vercel.app')
-      ) {
         return callback(null, true);
       }
 
       console.log('SOCKET CORS BLOCKED:', origin);
 
-      return callback(null, false);
+      return callback(
+        new Error(`Socket CORS blocked: ${origin}`)
+      );
     },
 
     methods: ['GET', 'POST'],
@@ -270,5 +294,7 @@ registerSocketHandlers(io);
 const PORT = process.env.PORT || 5000;
 
 httpServer.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 CodeCollab server running on port ${PORT}`);
+  console.log(
+    `🚀 CodeCollab server running on port ${PORT}`
+  );
 });

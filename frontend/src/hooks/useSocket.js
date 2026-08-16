@@ -1,7 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 
-const SOCKET_URL = 'http://localhost:5000';
+// Production: VITE_SOCKET_URL = https://your-backend.onrender.com
+// Local dev:  http://localhost:5000
+const SOCKET_URL =
+  import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
 
 export function useSocket() {
   const socketRef = useRef(null);
@@ -13,7 +16,12 @@ export function useSocket() {
     if (!socketRef.current || !socketRef.current.connected) {
       socketRef.current = io(SOCKET_URL, {
         auth: { token },
-        transports: ['websocket'],
+        // Use polling first then upgrade — more reliable on Render free tier
+        transports: ['polling', 'websocket'],
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+        timeout: 20000,
       });
     }
     return socketRef.current;
