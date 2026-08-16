@@ -28,15 +28,15 @@ app.set('trust proxy', 1);
 
 const httpServer = http.createServer(app);
 
-// ─────────────────────────────────────────────
+// ============================================================
 // DATABASE
-// ─────────────────────────────────────────────
+// ============================================================
 
 connectDB();
 
-// ─────────────────────────────────────────────
+// ============================================================
 // SECURITY
-// ─────────────────────────────────────────────
+// ============================================================
 
 app.use(
   helmet({
@@ -44,11 +44,10 @@ app.use(
   })
 );
 
-// ─────────────────────────────────────────────
+// ============================================================
 // CORS
-// ─────────────────────────────────────────────
+// ============================================================
 
-// Production + local frontend URLs
 const allowedOrigins = [
   'https://code-colab-pied.vercel.app',
   'http://localhost:5173',
@@ -56,10 +55,8 @@ const allowedOrigins = [
   'http://localhost:3000',
 ];
 
-// Check whether origin is allowed
-const isAllowedOrigin = (origin) => {
-  // Requests without Origin
-  // Example: Postman, health checks, server-to-server
+function isAllowedOrigin(origin) {
+  // Postman / server-to-server / Render health checks
   if (!origin) {
     return true;
   }
@@ -69,7 +66,7 @@ const isAllowedOrigin = (origin) => {
     return true;
   }
 
-  // Allow Vercel preview/deployment URLs
+  // Allow Vercel preview deployments
   if (
     origin.startsWith('https://') &&
     origin.endsWith('.vercel.app')
@@ -78,21 +75,16 @@ const isAllowedOrigin = (origin) => {
   }
 
   return false;
-};
+}
 
-// CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
     if (isAllowedOrigin(origin)) {
-      console.log('CORS ALLOWED:', origin || 'NO ORIGIN');
-      return callback(null, true);
+      callback(null, true);
+    } else {
+      console.log('❌ CORS BLOCKED:', origin);
+      callback(new Error(`CORS blocked: ${origin}`));
     }
-
-    console.log('CORS BLOCKED:', origin);
-
-    // IMPORTANT:
-    // Return an error so the request is clearly rejected.
-    return callback(new Error(`CORS blocked: ${origin}`));
   },
 
   credentials: true,
@@ -107,19 +99,23 @@ const corsOptions = {
   ],
 
   allowedHeaders: [
+    'Origin',
+    'X-Requested-With',
     'Content-Type',
+    'Accept',
     'Authorization',
   ],
 
   optionsSuccessStatus: 204,
 };
 
-// CORS MUST BE BEFORE ROUTES
+// IMPORTANT:
+// CORS middleware must come BEFORE routes
 app.use(cors(corsOptions));
 
-// ─────────────────────────────────────────────
+// ============================================================
 // BODY PARSER
-// ─────────────────────────────────────────────
+// ============================================================
 
 app.use(
   express.json({
@@ -133,9 +129,9 @@ app.use(
   })
 );
 
-// ─────────────────────────────────────────────
+// ============================================================
 // RATE LIMITING
-// ─────────────────────────────────────────────
+// ============================================================
 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -167,9 +163,9 @@ const authLimiter = rateLimit({
 
 app.use(globalLimiter);
 
-// ─────────────────────────────────────────────
+// ============================================================
 // LOGGING
-// ─────────────────────────────────────────────
+// ============================================================
 
 if (process.env.NODE_ENV !== 'test') {
   app.use(
@@ -181,9 +177,9 @@ if (process.env.NODE_ENV !== 'test') {
   );
 }
 
-// ─────────────────────────────────────────────
+// ============================================================
 // ROUTES
-// ─────────────────────────────────────────────
+// ============================================================
 
 app.use('/api/auth', authLimiter, authRoutes);
 
@@ -199,9 +195,9 @@ app.use('/api/test-cases', testCaseRoutes);
 
 app.use('/api/analytics', analyticsRoutes);
 
-// ─────────────────────────────────────────────
+// ============================================================
 // HEALTH CHECK
-// ─────────────────────────────────────────────
+// ============================================================
 
 app.get('/api/health', (req, res) => {
   res.status(200).json({
@@ -214,9 +210,9 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// ─────────────────────────────────────────────
+// ============================================================
 // 404
-// ─────────────────────────────────────────────
+// ============================================================
 
 app.use((req, res) => {
   res.status(404).json({
@@ -226,14 +222,17 @@ app.use((req, res) => {
   });
 });
 
-// ─────────────────────────────────────────────
+// ============================================================
 // GLOBAL ERROR HANDLER
-// ─────────────────────────────────────────────
+// ============================================================
 
 app.use((err, req, res, next) => {
-  console.error('SERVER ERROR:', err);
+  console.error('❌ SERVER ERROR:', err);
 
-  if (err.message && err.message.startsWith('CORS blocked')) {
+  if (
+    err.message &&
+    err.message.startsWith('CORS blocked')
+  ) {
     return res.status(403).json({
       success: false,
       message: err.message,
@@ -253,27 +252,19 @@ app.use((err, req, res, next) => {
   });
 });
 
-// ─────────────────────────────────────────────
+// ============================================================
 // SOCKET.IO
-// ─────────────────────────────────────────────
+// ============================================================
 
 const io = new Server(httpServer, {
   cors: {
     origin: function (origin, callback) {
       if (isAllowedOrigin(origin)) {
-        console.log(
-          'SOCKET CORS ALLOWED:',
-          origin || 'NO ORIGIN'
-        );
-
-        return callback(null, true);
+        callback(null, true);
+      } else {
+        console.log('❌ SOCKET CORS BLOCKED:', origin);
+        callback(new Error(`Socket CORS blocked: ${origin}`));
       }
-
-      console.log('SOCKET CORS BLOCKED:', origin);
-
-      return callback(
-        new Error(`Socket CORS blocked: ${origin}`)
-      );
     },
 
     methods: ['GET', 'POST'],
@@ -287,9 +278,9 @@ const io = new Server(httpServer, {
 
 registerSocketHandlers(io);
 
-// ─────────────────────────────────────────────
+// ============================================================
 // START SERVER
-// ─────────────────────────────────────────────
+// ============================================================
 
 const PORT = process.env.PORT || 5000;
 
