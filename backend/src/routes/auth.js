@@ -70,11 +70,10 @@ router.post('/forgot-password', async (req, res) => {
 
     const user = await User.findOne({ email: email.toLowerCase().trim() });
 
-    // Always respond success — don't reveal whether email exists
+    // If user not found — show success anyway (security: don't reveal if email exists)
     if (!user) {
       return res.json({ message: 'If that email is registered, a reset link has been sent.' });
     }
-
     // Generate a secure random token
     const rawToken = crypto.randomBytes(32).toString('hex');
     const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');

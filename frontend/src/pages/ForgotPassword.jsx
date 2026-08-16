@@ -17,7 +17,7 @@ export default function ForgotPassword() {
       // Only show success if backend confirmed it
       if (data.message) setSent(true);
     } catch (err) {
-      const msg = err.response?.data?.message || 'Failed to send reset email. Please try again.';
+      const msg = err.response?.data?.message || 'Something went wrong. Please check the email address and try again.';
       setError(msg);
     } finally {
       setLoading(false);
