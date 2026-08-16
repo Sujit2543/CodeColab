@@ -23,28 +23,29 @@ const analyticsRoutes = require('./routes/analytics');
 
 const app = express();
 
-// Render is behind a proxy
 app.set('trust proxy', 1);
 
 const httpServer = http.createServer(app);
 
-// ───────────────────────────────────────────────────────────────
-// Database
-// ───────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// DATABASE
+// ─────────────────────────────────────────────
+
 connectDB();
 
-// ───────────────────────────────────────────────────────────────
-// Security
-// ───────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// SECURITY
+// ─────────────────────────────────────────────
+
 app.use(
   helmet({
     crossOriginEmbedderPolicy: false,
   })
 );
 
-// ───────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
 // CORS
-// ───────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
 
 const allowedOrigins = [
   'https://code-colab-pied.vercel.app',
@@ -52,33 +53,27 @@ const allowedOrigins = [
   'http://localhost:3000',
 ];
 
-const isAllowedOrigin = (origin) => {
-  // Requests without Origin
-  // Example: Postman, server-to-server, health checks
-  if (!origin) {
-    return true;
-  }
-
-  // Exact allowed origins
-  if (allowedOrigins.includes(origin)) {
-    return true;
-  }
-
-  // Allow Vercel preview deployments
-  if (origin.endsWith('.vercel.app')) {
-    return true;
-  }
-
-  return false;
-};
-
 const corsOptions = {
   origin: function (origin, callback) {
-    if (isAllowedOrigin(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error(`CORS blocked: ${origin}`));
+
+    // Allow requests without Origin
+    if (!origin) {
+      return callback(null, true);
     }
+
+    // Allow exact origins
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    // Allow all Vercel deployments
+    if (origin.endsWith('.vercel.app')) {
+      return callback(null, true);
+    }
+
+    console.log('CORS BLOCKED:', origin);
+
+    return callback(null, false);
   },
 
   credentials: true,
@@ -100,49 +95,15 @@ const corsOptions = {
   optionsSuccessStatus: 204,
 };
 
-// IMPORTANT: CORS middleware must come before routes
+// CORS MUST BE BEFORE ROUTES
 app.use(cors(corsOptions));
 
-// Explicitly handle OPTIONS / preflight requests
-app.options(/.*/, cors(corsOptions));
+// Handle OPTIONS requests
+app.options('*', cors(corsOptions));
 
-// ───────────────────────────────────────────────────────────────
-// Rate Limiting
-// ───────────────────────────────────────────────────────────────
-
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 500,
-
-  standardHeaders: true,
-  legacyHeaders: false,
-
-  message: {
-    success: false,
-    message: 'Too many requests, please try again later.',
-    code: 'RATE_LIMITED',
-  },
-});
-
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-
-  standardHeaders: true,
-  legacyHeaders: false,
-
-  message: {
-    success: false,
-    message: 'Too many auth attempts, please try again later.',
-    code: 'RATE_LIMITED',
-  },
-});
-
-app.use(globalLimiter);
-
-// ───────────────────────────────────────────────────────────────
-// Body Parser
-// ───────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// BODY PARSER
+// ─────────────────────────────────────────────
 
 app.use(
   express.json({
@@ -156,9 +117,41 @@ app.use(
   })
 );
 
-// ───────────────────────────────────────────────────────────────
-// Logging
-// ───────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// RATE LIMITING
+// ─────────────────────────────────────────────
+
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 500,
+  standardHeaders: true,
+  legacyHeaders: false,
+
+  message: {
+    success: false,
+    message: 'Too many requests, please try again later.',
+    code: 'RATE_LIMITED',
+  },
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+
+  message: {
+    success: false,
+    message: 'Too many auth attempts, please try again later.',
+    code: 'RATE_LIMITED',
+  },
+});
+
+app.use(globalLimiter);
+
+// ─────────────────────────────────────────────
+// LOGGING
+// ─────────────────────────────────────────────
 
 if (process.env.NODE_ENV !== 'test') {
   app.use(
@@ -170,9 +163,9 @@ if (process.env.NODE_ENV !== 'test') {
   );
 }
 
-// ───────────────────────────────────────────────────────────────
-// Routes
-// ───────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// ROUTES
+// ─────────────────────────────────────────────
 
 app.use('/api/auth', authLimiter, authRoutes);
 
@@ -188,23 +181,24 @@ app.use('/api/test-cases', testCaseRoutes);
 
 app.use('/api/analytics', analyticsRoutes);
 
-// ───────────────────────────────────────────────────────────────
-// Health Check
-// ───────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// HEALTH CHECK
+// ─────────────────────────────────────────────
 
 app.get('/api/health', (req, res) => {
-  res.json({
+  res.status(200).json({
     success: true,
     status: 'ok',
+    message: 'CodeCollab backend is running',
     time: new Date(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development',
   });
 });
 
-// ───────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
 // 404
-// ───────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
 
 app.use((req, res) => {
   res.status(404).json({
@@ -214,24 +208,18 @@ app.use((req, res) => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────
-// Global Error Handler
-// ───────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// ERROR HANDLER
+// ─────────────────────────────────────────────
 
 app.use((err, req, res, next) => {
+
+  console.error('SERVER ERROR:', err);
+
   logger.error('Unhandled error', {
     error: err.message,
     stack: err.stack,
   });
-
-  // CORS error
-  if (err.message && err.message.startsWith('CORS blocked')) {
-    return res.status(403).json({
-      success: false,
-      message: err.message,
-      code: 'CORS_ERROR',
-    });
-  }
 
   res.status(500).json({
     success: false,
@@ -240,18 +228,28 @@ app.use((err, req, res, next) => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────
-// Socket.io
-// ───────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// SOCKET.IO
+// ─────────────────────────────────────────────
 
 const io = new Server(httpServer, {
   cors: {
     origin: function (origin, callback) {
-      if (isAllowedOrigin(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error(`Socket CORS blocked: ${origin}`));
+
+      if (!origin) {
+        return callback(null, true);
       }
+
+      if (
+        allowedOrigins.includes(origin) ||
+        origin.endsWith('.vercel.app')
+      ) {
+        return callback(null, true);
+      }
+
+      console.log('SOCKET CORS BLOCKED:', origin);
+
+      return callback(null, false);
     },
 
     methods: ['GET', 'POST'],
@@ -265,12 +263,12 @@ const io = new Server(httpServer, {
 
 registerSocketHandlers(io);
 
-// ───────────────────────────────────────────────────────────────
-// Start Server
-// ───────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// START SERVER
+// ─────────────────────────────────────────────
 
 const PORT = process.env.PORT || 5000;
 
-httpServer.listen(PORT, () => {
-  logger.info(`🚀 Server running on port ${PORT}`);
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 CodeCollab server running on port ${PORT}`);
 });
