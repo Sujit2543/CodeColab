@@ -49,30 +49,26 @@ app.use(
 // ============================================================
 
 const allowedOrigins = [
+  process.env.CLIENT_URL,
   'https://code-colab-pied.vercel.app',
   'http://localhost:5173',
   'http://localhost:5174',
+   'http://localhost:5175',
   'http://localhost:3000',
-];
+].filter(Boolean);
 
 function isAllowedOrigin(origin) {
-  // Postman / server-to-server / Render health checks
-  if (!origin) {
-    return true;
-  }
+  // Allow requests with no origin (Postman, server-to-server, health checks)
+  if (!origin) return true;
 
-  // Exact allowed origins
-  if (allowedOrigins.includes(origin)) {
-    return true;
-  }
+  // Allow any localhost port (dev on any port)
+  if (/^http:\/\/localhost:\d+$/.test(origin)) return true;
 
-  // Allow Vercel preview deployments
-  if (
-    origin.startsWith('https://') &&
-    origin.endsWith('.vercel.app')
-  ) {
-    return true;
-  }
+  // Allow exact production origins
+  if (allowedOrigins.includes(origin)) return true;
+
+  // Allow all Vercel preview deployments
+  if (origin.startsWith('https://') && origin.endsWith('.vercel.app')) return true;
 
   return false;
 }
@@ -214,7 +210,7 @@ app.get('/api/health', (req, res) => {
 // 404
 // ============================================================
 
-app.use((req, res) => {
+app.use((_req, res) => {
   res.status(404).json({
     success: false,
     message: 'Route not found',
@@ -226,7 +222,7 @@ app.use((req, res) => {
 // GLOBAL ERROR HANDLER
 // ============================================================
 
-app.use((err, req, res, next) => {
+app.use((err, _req, res, _next) => {
   console.error('❌ SERVER ERROR:', err);
 
   if (
