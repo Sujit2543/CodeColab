@@ -23,37 +23,43 @@ const analyticsRoutes = require('./routes/analytics');
 
 const app = express();
 
-// IMPORTANT: Render is behind a proxy
+// Render is behind a proxy
 app.set('trust proxy', 1);
 
 const httpServer = http.createServer(app);
 
-// Connect DB
+// ───────────────────────────────────────────────────────────────
+// Database
+// ───────────────────────────────────────────────────────────────
 connectDB();
 
-// ── Security Middleware ──────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────
+// Security
+// ───────────────────────────────────────────────────────────────
 app.use(
   helmet({
     crossOriginEmbedderPolicy: false,
   })
 );
 
-// ── CORS ─────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────
+// CORS
+// ───────────────────────────────────────────────────────────────
+
 const allowedOrigins = [
   'https://code-colab-pied.vercel.app',
   'http://localhost:5173',
   'http://localhost:3000',
 ];
 
-// Check whether the request origin is allowed
 const isAllowedOrigin = (origin) => {
-  // Requests without an Origin header
-  // (Postman, server-to-server, health checks, etc.)
+  // Requests without Origin
+  // Example: Postman, server-to-server, health checks
   if (!origin) {
     return true;
   }
 
-  // Main production frontend + localhost
+  // Exact allowed origins
   if (allowedOrigins.includes(origin)) {
     return true;
   }
@@ -66,39 +72,48 @@ const isAllowedOrigin = (origin) => {
   return false;
 };
 
-// Express CORS
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      if (isAllowedOrigin(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error(`CORS blocked: ${origin}`));
-      }
-    },
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (isAllowedOrigin(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS blocked: ${origin}`));
+    }
+  },
 
-    credentials: true,
+  credentials: true,
 
-    methods: [
-      'GET',
-      'POST',
-      'PUT',
-      'PATCH',
-      'DELETE',
-      'OPTIONS',
-    ],
+  methods: [
+    'GET',
+    'POST',
+    'PUT',
+    'PATCH',
+    'DELETE',
+    'OPTIONS',
+  ],
 
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-    ],
-  })
-);
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+  ],
 
-// ── Rate Limiting ────────────────────────────────────────────────
+  optionsSuccessStatus: 204,
+};
+
+// IMPORTANT: CORS middleware must come before routes
+app.use(cors(corsOptions));
+
+// Explicitly handle OPTIONS / preflight requests
+app.options(/.*/, cors(corsOptions));
+
+// ───────────────────────────────────────────────────────────────
+// Rate Limiting
+// ───────────────────────────────────────────────────────────────
+
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 500,
+
   standardHeaders: true,
   legacyHeaders: false,
 
@@ -113,6 +128,9 @@ const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
 
+  standardHeaders: true,
+  legacyHeaders: false,
+
   message: {
     success: false,
     message: 'Too many auth attempts, please try again later.',
@@ -122,7 +140,10 @@ const authLimiter = rateLimit({
 
 app.use(globalLimiter);
 
-// ── Body Parser ─────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────
+// Body Parser
+// ───────────────────────────────────────────────────────────────
+
 app.use(
   express.json({
     limit: '2mb',
@@ -135,7 +156,10 @@ app.use(
   })
 );
 
-// ── Logging ──────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────
+// Logging
+// ───────────────────────────────────────────────────────────────
+
 if (process.env.NODE_ENV !== 'test') {
   app.use(
     morgan('combined', {
@@ -146,16 +170,28 @@ if (process.env.NODE_ENV !== 'test') {
   );
 }
 
-// ── Routes ───────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────
+// Routes
+// ───────────────────────────────────────────────────────────────
+
 app.use('/api/auth', authLimiter, authRoutes);
+
 app.use('/api/rooms', roomRoutes);
+
 app.use('/api/projects', projectRoutes);
+
 app.use('/api/execution', executionRoutes);
+
 app.use('/api/notifications', notificationRoutes);
+
 app.use('/api/test-cases', testCaseRoutes);
+
 app.use('/api/analytics', analyticsRoutes);
 
-// ── Health Check ─────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────
+// Health Check
+// ───────────────────────────────────────────────────────────────
+
 app.get('/api/health', (req, res) => {
   res.json({
     success: true,
@@ -166,7 +202,10 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// ── 404 ──────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────
+// 404
+// ───────────────────────────────────────────────────────────────
+
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -175,12 +214,24 @@ app.use((req, res) => {
   });
 });
 
-// ── Global Error Handler ─────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────
+// Global Error Handler
+// ───────────────────────────────────────────────────────────────
+
 app.use((err, req, res, next) => {
   logger.error('Unhandled error', {
     error: err.message,
     stack: err.stack,
   });
+
+  // CORS error
+  if (err.message && err.message.startsWith('CORS blocked')) {
+    return res.status(403).json({
+      success: false,
+      message: err.message,
+      code: 'CORS_ERROR',
+    });
+  }
 
   res.status(500).json({
     success: false,
@@ -189,7 +240,10 @@ app.use((err, req, res, next) => {
   });
 });
 
-// ── Socket.io ────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────
+// Socket.io
+// ───────────────────────────────────────────────────────────────
+
 const io = new Server(httpServer, {
   cors: {
     origin: function (origin, callback) {
@@ -211,7 +265,10 @@ const io = new Server(httpServer, {
 
 registerSocketHandlers(io);
 
-// ── Start Server ─────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────
+// Start Server
+// ───────────────────────────────────────────────────────────────
+
 const PORT = process.env.PORT || 5000;
 
 httpServer.listen(PORT, () => {
